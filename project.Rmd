@@ -1,0 +1,151 @@
+---
+title: "605Project"
+output: html_document
+date: "2024-12"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+rm(list=ls())
+require("FITSio")
+require("tidyverse")
+require("randomForest")
+```
+
+```{r}
+df_raw <- read.csv("ATL CLT Non-Stop Flights.csv")
+```
+```{r}
+# remove row with NA
+df_nona <- df_raw[complete.cases(df_raw), ]
+#colSums(is.na(df_nona))
+```
+```{r}
+# scale the fare and remove those are beyond 3 sigma
+
+normalize_and_remove <- function(df, cols=c("col1","col2")){
+  df_scaled <- df
+  df_scaled[,cols] <- scale(df[,cols])
+
+  # find and remove all outliers (exceeding 3 sigma)
+  outliers <- apply(df_scaled[cols], 1, function(x){
+    any(abs(x)>3)
+  })
+  df_clean <- df_scaled[!outliers,]
+  
+  cat("Original rows:", nrow(df), "\n")
+  cat("Rows after cleaning:", nrow(df_clean), "\n")
+
+  return(df_clean)
+}
+
+#df_scaled <- normalize_and_remove(df_nona, cols=c("baseFare", "totalFare"))
+df_scaled <- df_nona
+```
+
+```{r}
+df_scaled$searchDate <- as.Date(df_scaled$searchDate)
+df_scaled$flightDate <- as.Date(df_scaled$flightDate)
+df_scaled$flight_month <- as.numeric(format(df_scaled$flightDate, "%m"))
+df_scaled$flight_weekday <- as.numeric(format(df_scaled$flightDate, "%u"))
+df_scaled$days_diff <- df_scaled$flightDate - df_scaled$searchDate
+
+head(df_scaled)
+```
+## RF
+```{r}
+# Variables seleection
+
+selected_features <- c(
+  # Continous variables
+  "baseFare",
+  # Discrete variables
+  "flight_month", "flight_weekday", "days_diff", "elapsedDays", "isBasicEconomy", "isRefundable", "seatsRemaining"
+)
+
+df_rf <- df_scaled[, c(selected_features, "totalFare")]
+df_rf$isBasicEconomy <- as.factor(df_rf$isBasicEconomy)
+df_rf$isRefundable <- as.factor(df_rf$isRefundable)
+df_rf$flight_month <- as.factor(df_rf$flight_month)
+df_rf$flight_weekday <- as.factor(df_rf$flight_weekday)
+
+#head(df_rf)
+#summary(df_rf)
+```
+
+```{r}
+set.seed(605)
+sample_size <- floor(0.9 * nrow(df_rf))
+train_index <- sample(seq_len(nrow(df_rf)), size = sample_size)
+train_data <- df_rf[train_index, c(selected_features, "totalFare")]
+test_data <- df_rf[-train_index, c(selected_features, "totalFare")]
+```
+
+```{r}
+rf_model <- randomForest(
+    totalFare ~ .,
+    data = train_data,
+    ntree = 500,
+    mtry = sqrt(length(selected_features)),
+    importance = TRUE
+)
+```
+```{r}
+#save(rf_model, file = "ATL_CLT_Non-stop_Flights_rf.RData")
+saveRDS(rf_model, "ATL_CLT_Nonstop_rf_model.rds")
+```
+```{r}
+saved_rm_model <- readRDS("ATL_CLT_Nonstop_rf_model.rds")
+predictions <- predict(saved_rm_model, test_data)
+
+importance_scores <- importance(saved_rm_model)
+var_importance <- data.frame(
+    Feature = rownames(importance_scores),
+    Importance = importance_scores[, 1] 
+)
+
+var_importance <- var_importance[order(var_importance$Importance, decreasing = TRUE), ]
+
+print(var_importance)
+```
+
+
+```{r}
+rmse <- sqrt(mean((predictions - test_data$totalFare)^2))
+print(paste("RMSE:", rmse))
+
+r_squared <- 1 - sum((test_data$totalFare - predictions)^2) / 
+                    sum((test_data$totalFare - mean(test_data$totalFare))^2)
+print(paste("R-squared:", r_squared))
+
+
+plot(test_data$totalFare, predictions,
+     xlab = "Actual Fare",
+     ylab = "Predicted Fare",
+     main = "Predicted vs Actual Fares")
+abline(0, 1, col = "red")
+```
+
+
+## Prediction
+```{r}
+new_flight <- data.frame(
+    #totalFare = as.numeric(0),
+    baseFare = as.numeric(100),
+    flight_month = factor(6, levels = levels(df_rf$flight_month)),
+    flight_weekday = factor(3, levels = levels(df_rf$flight_weekday)),
+    days_diff = as.numeric(5),
+    elapsedDays = as.numeric(0),
+    isBasicEconomy = factor("True", levels = levels(df_rf$isBasicEconomy)),
+    isRefundable = factor("False", levels = levels(df_rf$isRefundable)),
+    seatsRemaining = as.numeric(5)
+)
+
+predicted_fare <- predict(saved_rm_model, newdata = new_flight)
+print(paste("Predicted fare:", predicted_fare))
+
+```
+
+```{r}
+
+```
