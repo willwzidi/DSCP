@@ -41,6 +41,7 @@ normalize_and_remove <- function(df, cols=c("col1","col2")){
 
 #df_scaled <- normalize_and_remove(df_nona, cols=c("baseFare", "totalFare"))
 df_scaled <- df_nona
+rm(df_raw)
 ```
 
 ```{r}
@@ -49,8 +50,7 @@ df_scaled$flightDate <- as.Date(df_scaled$flightDate)
 df_scaled$flight_month <- as.numeric(format(df_scaled$flightDate, "%m"))
 df_scaled$flight_weekday <- as.numeric(format(df_scaled$flightDate, "%u"))
 df_scaled$days_diff <- df_scaled$flightDate - df_scaled$searchDate
-
-head(df_scaled)
+#head(df_scaled)
 ```
 ## RF
 ```{r}
@@ -71,6 +71,7 @@ df_rf$flight_weekday <- as.factor(df_rf$flight_weekday)
 
 #head(df_rf)
 #summary(df_rf)
+rm(df_scaled)
 ```
 
 ```{r}
@@ -147,5 +148,85 @@ print(paste("Predicted fare:", predicted_fare))
 ```
 
 ```{r}
+specified_days_diff <- 3
+specified_weekday <- 4
+specified_month <- 6
 
+baseFare_means <- aggregate(
+    baseFare ~ isBasicEconomy + isRefundable + seatsRemaining + elapsedDays, 
+    data = df_rf, 
+    FUN = mean, 
+    na.rm = TRUE
+)
+
+elapsedDays_values <- 0:1
+isBasicEconomy_values <- levels(df_rf$isBasicEconomy)
+isRefundable_values <- levels(df_rf$isRefundable)
+seatsRemaining_values <- 1:10
+
+combinations <- expand.grid(
+    elapsedDays = elapsedDays_values,
+    isBasicEconomy = isBasicEconomy_values,
+    isRefundable = isRefundable_values,
+    seatsRemaining = seatsRemaining_values
+)
+```
+
+```{r}
+results <- data.frame()
+
+for(i in 1:nrow(combinations)) {
+    current_baseFare <- subset(
+        baseFare_means,
+        isBasicEconomy == combinations$isBasicEconomy[i] &
+        isRefundable == combinations$isRefundable[i] &
+        seatsRemaining == combinations$seatsRemaining[i] &
+        elapsedDays == combinations$elapsedDays[i]
+    )$baseFare
+    
+    if(length(current_baseFare) == 0 || is.na(current_baseFare)) {
+        current_baseFare <- mean(df_rf$baseFare, na.rm = TRUE)
+    }
+    
+    new_flight <- data.frame(
+        baseFare = as.numeric(current_baseFare),
+        flight_month = factor(specified_month, 
+                            levels = levels(df_rf$flight_month)),
+        flight_weekday = factor(specified_weekday, 
+                              levels = levels(df_rf$flight_weekday)),
+        days_diff = as.numeric(specified_days_diff),
+        elapsedDays = as.numeric(combinations$elapsedDays[i]),
+        isBasicEconomy = factor(combinations$isBasicEconomy[i], 
+                               levels = levels(df_rf$isBasicEconomy)),
+        isRefundable = factor(combinations$isRefundable[i], 
+                             levels = levels(df_rf$isRefundable)),
+        seatsRemaining = as.numeric(combinations$seatsRemaining[i])
+    )
+    
+    predicted_fare <- predict(saved_rm_model, newdata = new_flight)
+    
+    results <- rbind(results, data.frame(
+        BaseFare = current_baseFare,
+        ElapsedDays = combinations$elapsedDays[i],
+        IsBasicEconomy = combinations$isBasicEconomy[i],
+        IsRefundable = combinations$isRefundable[i],
+        SeatsRemaining = combinations$seatsRemaining[i],
+        Predicted_Fare = predicted_fare
+    ))
+}
+
+results$Days_Diff <- specified_days_diff
+results$Flight_Month <- specified_month
+results$Flight_Weekday <- specified_weekday
+
+results <- results[, c("BaseFare", "ElapsedDays", "IsBasicEconomy", "IsRefundable", 
+                      "SeatsRemaining", "Days_Diff", "Flight_Month", "Flight_Weekday", 
+                      "Predicted_Fare")]
+results <- results[order(results$Predicted_Fare), ]
+```
+
+```{r}
+write.csv(results, sprintf("predictions_days%d_month%d_weekday%d_meanbase.csv", 
+          specified_days_diff, specified_month, specified_weekday), 
+          row.names = FALSE)
 ```
