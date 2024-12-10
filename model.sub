@@ -5,17 +5,19 @@ log = log/$(Cluster)_$(tgz_name).log
 output = output/$(Cluster)_$(tgz_name).out
 error = error/$(Cluster)_$(tgz_name).err
 
-container_image = osdf:///ospool/uc-shared/public/OSG-Staff/xalim_stat/R_tidyverse_FITSio.sif
+container_image = file:///staging/groups/stat605_2024/group6/R_tidyverse_FITSio_randomForest.sif
 
 executable = model.sh
-arguments = $(file_name).csv 
+arguments = ATL_BOS_NonStop.csv
 
+ 
 should_transfer_files = YES
 when_to_transfer_output = ON_EXIT
-transfer_input_files = model.R, /home/groups/STAT_DSCP/Group6/$(file_name).csv
+transfer_input_files = model.R, /home/groups/STAT_DSCP/Group6/ATL_BOS_NonStop.csv
 
-request_cpus = 1
-request_memory = 1GB
-request_disk = 2GB
 
-queue file_name from csv_list
+request_cpus = 2
+request_memory = 2GB
+request_disk = 8GB
+
+queue 1
