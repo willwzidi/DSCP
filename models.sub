@@ -1,0 +1,22 @@
+# Before running this with "condor_submit .sub", the
+# directories log, error, and output must exist.
+
+log = log/$(Cluster)_$(csv_name).log
+output = output/$(Cluster)_$(csv_name).out
+error = error/$(Cluster)_$(csv_name).err
+
+container_image = file:///staging/groups/stat605_2024/group6/R_tidyverse_FITSio_randomForest.sif
+
+executable = model.sh
+arguments = $(csv_name).csv
+
+ 
+should_transfer_files = YES
+when_to_transfer_output = ON_EXIT
+transfer_input_files = model.R, /home/groups/STAT_DSCP/Group6/Flight/$(csv_name).csv
+
+request_cpus = 1
+request_memory = 8GB
+request_disk = 1GB
+
+queue csv_name from csv_list
